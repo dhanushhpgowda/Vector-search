@@ -1,0 +1,17 @@
+# Web Framework
+flask
+
+# AI & Vector DB (Missing from your original list)
+pymilvus
+huggingface_hub
+python-dotenv
+numpy
+
+# Document Processing & Logic
+langchain
+langchain-community
+langchain-text-splitters
+
+# File Extraction
+pypdf
+python-docx

@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vector Query AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); min-height: 100vh; color: white; overflow: hidden; }
+        .glass { background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .loader { border-top-color: #3b82f6; animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #chatThread::-webkit-scrollbar { width: 4px; }
+        #chatThread::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        .animate-fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="flex flex-col items-center p-4 md:p-8">
+
+    <div class="w-full max-w-3xl flex flex-col h-[90vh]">
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
+                Vector Query AI
+            </h1>
+        </div>
+
+        <div class="glass p-4 rounded-3xl mb-6 sticky top-0 z-10">
+            <div class="flex items-center gap-3 bg-slate-900/50 rounded-2xl p-2 border border-slate-700 focus-within:border-purple-500 transition">
+                
+                <button onclick="toggleHistory()" class="p-3 hover:bg-white/10 rounded-xl transition text-slate-400 hover:text-purple-400" title="Recent Documents">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                    </svg>
+                </button>
+
+                <button onclick="document.getElementById('fileInput').click()" 
+                        class="p-3 hover:bg-white/10 rounded-xl transition text-slate-400 hover:text-blue-400"
+                        title="Attach Document">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                </button>
+                <input type="file" id="fileInput" class="hidden" onchange="handleFileUpload()">
+
+                <input type="text" id="queryInput" placeholder="Ask about your document..." 
+                       class="flex-grow bg-transparent border-none outline-none py-3 text-white placeholder-slate-500">
+
+                <button onclick="askQuestion()" 
+                        class="bg-purple-600 hover:bg-purple-500 p-3 rounded-xl transition shadow-lg">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                    </svg>
+                </button>
+            </div>
+
+            <div id="historyDropdown" class="hidden mt-2 glass rounded-2xl overflow-hidden animate-fade-in border border-white/10 max-h-40 overflow-y-auto shadow-2xl">
+                <div id="historyList" class="flex flex-col">
+                    </div>
+            </div>
+            
+            <div id="fileStatus" class="hidden mt-3 px-4 flex items-center justify-between bg-blue-500/10 rounded-xl py-2 border border-blue-500/20">
+                <div class="flex items-center gap-2 overflow-hidden">
+                    <span class="text-[10px] text-blue-400 px-2 py-1 rounded uppercase font-bold tracking-widest whitespace-nowrap">Active Doc:</span>
+                    <span id="fileName" class="text-xs text-slate-300 italic truncate"></span>
+                </div>
+                <button onclick="removeDocument()" class="text-slate-500 hover:text-red-500 transition p-1" title="Remove Document">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <div id="chatThread" class="flex-grow overflow-y-auto space-y-6 px-2 pb-10">
+            <div id="emptyState" class="flex flex-col items-center justify-center h-full text-slate-400 text-center animate-fade-in">
+                <div class="mb-4 text-4xl opacity-20">📂</div>
+                <p class="text-lg font-medium bg-clip-text text-transparent bg-gradient-to-b from-slate-200 to-slate-500">
+                    Upload your doc and get your answer <br>in vectorized form.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // NEW: Toggle History List
+        async function toggleHistory() {
+            const dropdown = document.getElementById('historyDropdown');
+            const list = document.getElementById('historyList');
+            
+            if (dropdown.classList.contains('hidden')) {
+                const res = await fetch('/get_history');
+                const data = await res.json();
+                
+                list.innerHTML = "";
+                if (data.history.length === 0) {
+                    list.innerHTML = `<div class="p-4 text-xs text-slate-500 text-center italic">No history found</div>`;
+                } else {
+                    data.history.forEach(item => {
+                        const div = document.createElement('div');
+                        div.className = "px-4 py-3 hover:bg-white/10 cursor-pointer text-xs flex items-center gap-2 transition border-b border-white/5";
+                        div.innerHTML = `<span>📄</span> <span class="truncate">${item.filename}</span>`;
+                        div.onclick = () => selectDoc(item.coll, item.filename);
+                        list.appendChild(div);
+                    });
+                }
+                dropdown.classList.remove('hidden');
+            } else {
+                dropdown.classList.add('hidden');
+            }
+        }
+
+        // NEW: Select Document from History
+        async function selectDoc(coll, filename) {
+            const res = await fetch('/select_doc', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ coll: coll })
+            });
+            if (res.ok) {
+                document.getElementById('historyDropdown').classList.add('hidden');
+                document.getElementById('emptyState').classList.add('hidden');
+                document.getElementById('fileStatus').classList.remove('hidden');
+                document.getElementById('fileName').innerText = filename;
+                appendSystemMessage(`Context switched to: <b>${filename}</b>`);
+            }
+        }
+
+        async function handleFileUpload() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            if(!file) return;
+
+            document.getElementById('emptyState').classList.add('hidden');
+            const statusId = "status-" + Date.now();
+            appendProcessingMessage(statusId, file.name);
+            
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+
+                if (data.message) {
+                    updateProcessingToSuccess(statusId, file.name);
+                    document.getElementById('fileStatus').classList.remove('hidden');
+                    document.getElementById('fileName').innerText = file.name;
+                } else {
+                    appendSystemMessage(`Error: ${data.error}`, true);
+                    document.getElementById(statusId)?.remove();
+                    document.getElementById('emptyState').classList.remove('hidden');
+                }
+            } catch (err) {
+                appendSystemMessage("Failed to reach server.", true);
+                document.getElementById(statusId)?.remove();
+                document.getElementById('emptyState').classList.remove('hidden');
+            }
+        }
+
+        function removeDocument() {
+            document.getElementById('fileStatus').classList.add('hidden');
+            document.getElementById('emptyState').classList.remove('hidden');
+            document.getElementById('fileInput').value = ""; 
+            appendSystemMessage("Document removed. Knowledge base reset.");
+        }
+
+        function appendProcessingMessage(id, fileName) {
+            const thread = document.getElementById('chatThread');
+            const div = document.createElement('div');
+            div.id = id;
+            div.className = "flex justify-center my-4 animate-pulse";
+            div.innerHTML = `
+                <div class="flex items-center gap-3 bg-blue-500/10 border border-blue-500/20 px-6 py-3 rounded-2xl">
+                    <div class="loader w-4 h-4 border-2 border-slate-700 rounded-full border-t-blue-500"></div>
+                    <span class="text-xs text-blue-400 font-medium italic">
+                        <b>${fileName}</b> is vectorizing and getting stored in Milvus...
+                    </span>
+                </div>`;
+            thread.appendChild(div);
+            scrollToBottom();
+        }
+
+        function updateProcessingToSuccess(id, fileName) {
+            const statusDiv = document.getElementById(id);
+            if (statusDiv) {
+                statusDiv.classList.remove('animate-pulse');
+                statusDiv.innerHTML = `
+                    <div class="flex items-center gap-2 bg-green-500/10 border border-green-500/20 px-4 py-1 rounded-full animate-fade-in">
+                        <span class="text-green-500 text-xs">✓</span>
+                        <span class="text-[11px] text-green-400"><b>${fileName}</b> stored successfully</span>
+                    </div>`;
+                
+                setTimeout(() => {
+                    statusDiv.style.opacity = '0';
+                    statusDiv.style.transition = 'opacity 1s';
+                    setTimeout(() => statusDiv.remove(), 1000);
+                }, 4000);
+            }
+        }
+
+        async function askQuestion() {
+            const queryInput = document.getElementById('queryInput');
+            const query = queryInput.value.trim();
+            if(!query) return;
+
+            appendUserMessage(query);
+            queryInput.value = '';
+
+            try {
+                const res = await fetch('/ask', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ query: query })
+                });
+                const data = await res.json();
+                
+                if(data.results && data.results.length > 0) {
+                    const responseHTML = data.results.map(r => r.text).join('<br><br>');
+                    const topScore = data.results[0].score;
+                    appendAiMessage(responseHTML, topScore);
+                } else {
+                    appendAiMessage(data.error || "No context found in document.", 0, true);
+                }
+            } catch (err) {
+                appendAiMessage("Server error.", 0, true);
+            }
+        }
+
+        function appendUserMessage(text) {
+            const thread = document.getElementById('chatThread');
+            const div = document.createElement('div');
+            div.className = "flex justify-end ml-12 animate-fade-in";
+            div.innerHTML = `<div class="bg-blue-600/20 border border-blue-500/30 px-5 py-3 rounded-2xl rounded-tr-none text-sm">${text}</div>`;
+            thread.appendChild(div);
+            scrollToBottom();
+        }
+
+        function appendAiMessage(text, score, isError = false) {
+            const thread = document.getElementById('chatThread');
+            const div = document.createElement('div');
+            div.className = "mr-12 animate-fade-in";
+            div.innerHTML = `
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="w-6 h-6 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full"></div>
+                    <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Match Score: ${score}</span>
+                </div>
+                <div class="glass px-6 py-4 rounded-3xl rounded-tl-none text-sm leading-relaxed ${isError ? 'text-red-400' : 'text-slate-200'}">
+                    ${text}
+                </div>`;
+            thread.appendChild(div);
+            scrollToBottom();
+        }
+
+        function appendSystemMessage(text, isError = false) {
+            const thread = document.getElementById('chatThread');
+            const div = document.createElement('div');
+            div.className = "flex justify-center my-2 animate-fade-in";
+            div.innerHTML = `<span class="text-[11px] ${isError ? 'text-red-500' : 'text-slate-500'} bg-white/5 px-4 py-1 rounded-full border border-white/5">${text}</span>`;
+            thread.appendChild(div);
+            scrollToBottom();
+        }
+
+        function scrollToBottom() {
+            const thread = document.getElementById('chatThread');
+            thread.scrollTop = thread.scrollHeight;
+        }
+
+        document.getElementById('queryInput').addEventListener('keypress', (e) => {
+            if(e.key === 'Enter') askQuestion();
+        });
+    </script>
+</body>
+</html>
